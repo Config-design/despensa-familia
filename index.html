@@ -16,6 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/index.min.js"></script>
 <style>
   :root{
     --void:#05070A;
@@ -567,7 +568,12 @@
     font-family:'JetBrains Mono',monospace; font-size:9.5px; color:var(--violet);
     text-transform:uppercase; letter-spacing:0.5px; margin:10px 0 4px 2px;
   }
-  video{width:100%;border-radius:5px;background:#000;border:1px solid var(--cyan);}
+  #camWrap.show, #searchCamWrap.show{overflow:hidden;}
+  video{
+    width:100%; height:230px; object-fit:cover;
+    border-radius:5px; background:#000; border:1px solid var(--cyan);
+    transform:scale(1.8); transform-origin:center;
+  }
   .cam-status{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--cyan);margin-top:6px;text-align:center;}
 </style>
 </head>
@@ -1588,48 +1594,101 @@ function saveProduct(){
   render();
 }
 
+let zxingControls = null;
 async function startBarcodeScan(opts){
   // opts: {wrapId, videoId, statusId, onResult}
   const wrap = document.getElementById(opts.wrapId);
   const status = document.getElementById(opts.statusId);
   wrap.classList.add('show');
 
-  if(!('BarcodeDetector' in window)){
-    status.textContent = 'Leitura por câmera não é suportada neste navegador. Digite o código manualmente.';
+  if('BarcodeDetector' in window){
+    try{
+      // Só formatos de código de barras de produto — QR fica de fora para não
+      // confundir com QR codes de "saiba mais" que aparecem na mesma embalagem.
+      barcodeDetector = new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128']});
+      scanStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+      const video = document.getElementById(opts.videoId);
+      video.srcObject = scanStream;
+      status.textContent = 'Aponte a câmera para o código de barras…';
+      scanBarcodeLoop(video, status, opts, {code:null, count:0});
+      return;
+    }catch(e){
+      status.textContent = 'Não foi possível acessar a câmera. Digite o código manualmente.';
+      return;
+    }
+  }
+
+  // Safari/iOS não tem BarcodeDetector nativo — usa a biblioteca ZXing como alternativa.
+  if(typeof ZXing !== 'undefined'){
+    try{
+      status.textContent = 'Aponte a câmera para o código de barras…';
+      const video = document.getElementById(opts.videoId);
+      const codeReader = new ZXing.BrowserMultiFormatReader();
+      const confirmState = {code:null, count:0};
+      zxingControls = await codeReader.decodeFromVideoDevice(undefined, video, (result, err, controls)=>{
+        if(result){
+          const value = result.getText();
+          if(value === confirmState.code){
+            confirmState.count++;
+          } else {
+            confirmState.code = value;
+            confirmState.count = 1;
+          }
+          if(confirmState.count >= 2){
+            controls.stop();
+            zxingControls = null;
+            stopScan(opts.wrapId);
+            status.textContent = 'Código lido: ' + value;
+            opts.onResult(value);
+          } else {
+            status.textContent = 'Confirmando código…';
+          }
+        }
+      });
+    }catch(e){
+      status.textContent = 'Não foi possível acessar a câmera. Digite o código manualmente.';
+    }
     return;
   }
-  try{
-    barcodeDetector = new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128','qr_code']});
-    scanStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
-    const video = document.getElementById(opts.videoId);
-    video.srcObject = scanStream;
-    status.textContent = 'Aponte a câmera para o código de barras…';
-    scanBarcodeLoop(video, status, opts);
-  }catch(e){
-    status.textContent = 'Não foi possível acessar a câmera. Digite o código manualmente.';
-  }
+
+  status.textContent = 'Leitura por câmera não é suportada neste navegador. Digite o código manualmente.';
 }
-async function scanBarcodeLoop(video, status, opts){
+async function scanBarcodeLoop(video, status, opts, confirmState){
   if(!scanStream) return;
   try{
     const codes = await barcodeDetector.detect(video);
     if(codes.length>0){
       const value = codes[0].rawValue;
-      stopScan(opts.wrapId);
-      status.textContent = 'Código lido: ' + value;
-      opts.onResult(value);
-      return;
+      if(value === confirmState.code){
+        confirmState.count++;
+      } else {
+        confirmState.code = value;
+        confirmState.count = 1;
+      }
+      if(confirmState.count >= 2){
+        stopScan(opts.wrapId);
+        status.textContent = 'Código lido: ' + value;
+        opts.onResult(value);
+        return;
+      } else {
+        status.textContent = 'Confirmando código…';
+      }
     }
   }catch(e){}
-  if(scanStream) requestAnimationFrame(()=>scanBarcodeLoop(video, status, opts));
+  if(scanStream) requestAnimationFrame(()=>scanBarcodeLoop(video, status, opts, confirmState));
 }
 function stopScan(wrapId){
   if(scanStream){
     scanStream.getTracks().forEach(t=>t.stop());
     scanStream = null;
   }
+  if(zxingControls){
+    try{ zxingControls.stop(); }catch(e){}
+    zxingControls = null;
+  }
   document.getElementById(wrapId || 'camWrap').classList.remove('show');
 }
+
 
 function parseValorBR(str){
   if(!str) return 0;
