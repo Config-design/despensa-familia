@@ -326,6 +326,11 @@
     font-size:13px;cursor:pointer;padding:4px 6px;border-radius:4px;
   }
   .flag-btn:active{border-color:var(--red); background:rgba(255,56,96,0.1);}
+  .swap-btn{
+    background:none;border:1px solid var(--line);color:var(--text-soft);
+    font-size:13px;cursor:pointer;padding:4px 6px;border-radius:4px;
+  }
+  .swap-btn:active{border-color:var(--violet); background:rgba(157,123,255,0.12);}
 
   .chip-row{
     display:flex; flex-wrap:wrap; gap:8px; margin-bottom:6px;
@@ -389,6 +394,17 @@
     padding:6px 10px; border-radius:5px; cursor:pointer; white-space:nowrap;
   }
   .undo-btn:active{background:rgba(255,176,32,0.15);}
+  #cmp_results{margin-top:16px;}
+  .cmp-row{
+    display:grid; grid-template-columns:36% 32% 32%;
+    gap:6px; padding:9px 0; border-bottom:1px solid var(--line-soft);
+    align-items:center;
+  }
+  .cmp-row.cmp-header{border-bottom:1px solid var(--line); padding-bottom:11px;}
+  .cmp-label{font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-soft); text-transform:uppercase;}
+  .cmp-val{font-size:12.5px; color:var(--text); text-align:center; font-family:'JetBrains Mono',monospace;}
+  .cmp-row.cmp-header .cmp-val{font-family:'Inter',sans-serif; font-weight:600; font-size:12px; color:var(--cyan); text-align:center;}
+  .cmp-val.cmp-better{color:var(--cyan); font-weight:700; text-shadow:0 0 8px rgba(0,245,196,0.35);}
 
   .cta-card{
     display:flex; align-items:center; justify-content:space-between; gap:12px;
@@ -563,12 +579,14 @@
   #camWrap.show{display:block;}
   #searchCamWrap{display:none;margin-top:10px;}
   #searchCamWrap.show{display:block;}
+  #batchCamWrap{display:none;margin-top:10px;}
+  #batchCamWrap.show{display:block;}
   .search-result{margin-bottom:2px;}
   .search-cat-tag{
     font-family:'JetBrains Mono',monospace; font-size:9.5px; color:var(--violet);
     text-transform:uppercase; letter-spacing:0.5px; margin:10px 0 4px 2px;
   }
-  #camWrap.show, #searchCamWrap.show{overflow:hidden;}
+  #camWrap.show, #searchCamWrap.show, #batchCamWrap.show{overflow:hidden;}
   video{
     width:100%; height:230px; object-fit:cover;
     border-radius:5px; background:#000; border:1px solid var(--cyan);
@@ -698,6 +716,45 @@
 Peito de frango kg; Açougue; 1.2; 16.50;
 Detergente; Limpeza; 2; 2.49;"></textarea>
     <button class="primary-btn" id="doImportBtn">Importar itens colados</button>
+  </div>
+</div>
+
+<div class="overlay" id="overlayCompare">
+  <div class="sheet">
+    <button class="close-x" data-close>×</button>
+    <h2>📊 Comparar produtos</h2>
+    <label>Produto A</label>
+    <select id="cmp_a"></select>
+    <label>Produto B</label>
+    <select id="cmp_b"></select>
+    <button class="primary-btn" id="cmp_run">Comparar</button>
+    <div id="cmp_results"></div>
+  </div>
+</div>
+
+<div class="overlay" id="overlayCodeUpdate">
+  <div class="sheet">
+    <button class="close-x" data-close>×</button>
+    <h2>🏷️ Atualizar códigos por texto</h2>
+    <div class="hint">Uma linha por produto, no formato:<br><b>nome do produto; código de barras; preço (opcional)</b></div>
+    <textarea id="codeUpdateText" placeholder="Det Louca Ype 500ml Limao; 7896098900222; 2,59
+Leite Lv P Alegre 1L Int; 7896122305207; 65,88"></textarea>
+    <button class="primary-btn" id="bk_codeupdate_submit">Atualizar códigos</button>
+  </div>
+</div>
+
+<div class="overlay" id="overlayBatchScan">
+  <div class="sheet">
+    <button class="close-x" id="batchScanCloseBtn">×</button>
+    <h2>📷 Cadastrar códigos em lote</h2>
+    <div class="hint" id="batchScanProgress"></div>
+    <div class="backup-card-title" id="batchScanProduct" style="margin-top:10px;"></div>
+    <div id="batchCamWrap" class="show" style="margin-top:10px;">
+      <video id="batchCamVideo" autoplay playsinline muted></video>
+      <div class="cam-status" id="batchCamStatus">Aponte a câmera para o código de barras</div>
+    </div>
+    <button class="ghost-btn" id="batchScanSkipBtn">Pular este produto</button>
+    <button class="primary-btn danger-btn" id="batchScanStopBtn" style="margin-top:8px;">Encerrar</button>
   </div>
 </div>
 
@@ -1125,12 +1182,14 @@ function renderItemRow(p, s){
       <span class="qty-val">${p.stock}</span>
       <button data-act="plus" data-id="${p.id}">+</button>
       ${p.stock>0? `<button class="flag-btn" data-act="out" data-id="${p.id}" title="Marcar como acabou">🏁</button>` : ''}
+      <button class="swap-btn" data-act="swap" data-id="${p.id}" title="Comprei outra marca dessa vez">🔁</button>
       <button class="edit-btn" data-act="edit" data-id="${p.id}">✎</button>
     </div>
   `;
   row.querySelectorAll('button').forEach(btn=>{
     btn.onclick = ()=>{
       const act = btn.dataset.act;
+      if(act==='swap') openAddSwap(p.category);
       if(act==='minus') adjustStock(p.id, -1, 'consumo');
       if(act==='plus') adjustStock(p.id, 1, 'compra');
       if(act==='edit') openEdit(p.id);
@@ -1203,6 +1262,24 @@ function renderSettingsBackupArea(){
     </div>
 
     <div class="backup-card">
+      <div class="backup-card-title">📷 Cadastrar códigos em lote</div>
+      <div class="backup-card-desc">Escaneia vários produtos seguidos sem precisar abrir o formulário toda vez — ele mostra o próximo produto sem código automaticamente após cada leitura.</div>
+      <button class="primary-btn cyan-outline" id="bk_batchscan">Começar a escanear</button>
+    </div>
+
+    <div class="backup-card">
+      <div class="backup-card-title">🏷️ Atualizar códigos por texto</div>
+      <div class="backup-card-desc">Cole uma lista de "nome do produto; código de barras; preço (opcional)" — um por linha — e o app encontra os produtos pelo nome e preenche o código de uma vez.</div>
+      <button class="primary-btn cyan-outline" id="bk_codeupdate">Colar lista</button>
+    </div>
+
+    <div class="backup-card">
+      <div class="backup-card-title">📊 Comparar produtos</div>
+      <div class="backup-card-desc">Compare duas marcas/versões diferentes (ex: Colgate vs Sorriso) — total gasto, preço médio e histórico de compra de cada uma.</div>
+      <button class="primary-btn cyan-outline" id="bk_compare">Abrir comparação</button>
+    </div>
+
+    <div class="backup-card">
       <div class="backup-card-title">⬇ Fazer backup</div>
       <div class="backup-card-desc">Baixa um arquivo .json com todos os produtos, histórico de compras e configurações.</div>
       <button class="primary-btn cyan-outline" id="bk_export">Baixar backup</button>
@@ -1232,6 +1309,11 @@ function renderSettingsBackupArea(){
     btn.onclick = ()=> undoImportBatch(btn.dataset.batch);
   });
   document.getElementById('bk_reclassify').onclick = reclassifyAllProducts;
+  document.getElementById('bk_batchscan').onclick = ()=>{ closeOverlays(); openBatchScan(); };
+  document.getElementById('bk_codeupdate').onclick = ()=>{ closeOverlays(); openCodeUpdate(); };
+  document.getElementById('bk_compare').onclick = ()=>{ closeOverlays(); openCompare(); };
+  document.getElementById('cmp_run').onclick = runCompare;
+  document.getElementById('bk_codeupdate_submit').onclick = bulkUpdateCodes;
   document.getElementById('bk_export').onclick = exportData;
   document.getElementById('bk_import_backup').onclick = ()=> document.getElementById('jsonFileInput').click();
   document.getElementById('bk_history').onclick = ()=>{ closeOverlays(); openHistory(); };
@@ -1446,6 +1528,138 @@ function adjustStock(id, delta, type){
   render();
 }
 
+let batchQueue = [];
+let batchIndex = 0;
+function openCompare(){
+  const options = state.products.slice().sort((a,b)=>a.name.localeCompare(b.name))
+    .map(p=>`<option value="${p.id}">${p.name} (${p.category})</option>`).join('');
+  document.getElementById('cmp_a').innerHTML = options;
+  document.getElementById('cmp_b').innerHTML = options;
+  document.getElementById('cmp_results').innerHTML = '';
+  document.getElementById('overlayCompare').classList.add('show');
+}
+function runCompare(){
+  const pA = state.products.find(p=>p.id===document.getElementById('cmp_a').value);
+  const pB = state.products.find(p=>p.id===document.getElementById('cmp_b').value);
+  if(!pA || !pB){ return; }
+  if(pA.id === pB.id){ alert('Escolha dois produtos diferentes.'); return; }
+
+  const build = (p)=>{
+    const events = state.events.filter(e=>e.productId===p.id && e.type==='compra').sort((a,b)=>a.date.localeCompare(b.date));
+    const totalQty = events.reduce((s,e)=>s+e.qty,0);
+    const total = events.reduce((s,e)=>s+(e.price||0)*e.qty,0);
+    const avg = totalQty>0 ? total/totalQty : 0;
+    const last = events[events.length-1];
+    return {p, events, total, avg, last};
+  };
+  const A = build(pA), B = build(pB);
+
+  const row = (label, va, vb, opts={})=>{
+    const {money=false, lowerIsBetter=false} = opts;
+    let aClass='', bClass='';
+    if(lowerIsBetter && va!==vb && typeof va==='number'){
+      if(va<vb) aClass='cmp-better'; else bClass='cmp-better';
+    }
+    const fa = money? fmtMoney(va) : va;
+    const fb = money? fmtMoney(vb) : vb;
+    return `<div class="cmp-row"><div class="cmp-label">${label}</div><div class="cmp-val ${aClass}">${fa}</div><div class="cmp-val ${bClass}">${fb}</div></div>`;
+  };
+
+  const lastA = A.last ? A.last.date+' · '+fmtMoney(A.last.price) : '—';
+  const lastB = B.last ? B.last.date+' · '+fmtMoney(B.last.price) : '—';
+
+  const histRow = (label, ev)=>{
+    if(ev.length===0) return '<div class="hint">Nenhuma compra registrada.</div>';
+    return ev.slice(-5).reverse().map(e=>`<div class="hist-row"><span class="hist-date">${e.date}</span><span class="hist-name">×${e.qty}</span><span class="hist-val">${fmtMoney(e.price)}</span></div>`).join('');
+  };
+
+  document.getElementById('cmp_results').innerHTML = `
+    <div class="cmp-row cmp-header"><div class="cmp-label"></div><div class="cmp-val">${A.p.name}</div><div class="cmp-val">${B.p.name}</div></div>
+    ${row('Nº de compras', A.events.length, B.events.length)}
+    ${row('Total gasto', A.total, B.total, {money:true})}
+    ${row('Preço médio/un', A.avg, B.avg, {money:true, lowerIsBetter:true})}
+    ${row('Última compra', lastA, lastB)}
+    <div class="chart-title" style="margin-top:14px;">Últimas compras — ${A.p.name}</div>
+    ${histRow('A', A.events)}
+    <div class="chart-title" style="margin-top:14px;">Últimas compras — ${B.p.name}</div>
+    ${histRow('B', B.events)}
+  `;
+}
+
+function openCodeUpdate(){
+  document.getElementById('codeUpdateText').value = '';
+  document.getElementById('overlayCodeUpdate').classList.add('show');
+}
+function bulkUpdateCodes(){
+  const text = document.getElementById('codeUpdateText').value.trim();
+  if(!text) return;
+  const lines = text.split('\n').map(l=>l.trim()).filter(Boolean);
+  let matched = 0;
+  const notFound = [];
+  lines.forEach(line=>{
+    const parts = line.split(';').map(s=>s.trim());
+    const name = parts[0], code = parts[1], priceRaw = parts[2];
+    if(!name || !code) return;
+    const nameLower = name.toLowerCase();
+    let p = state.products.find(x=>x.name.toLowerCase()===nameLower);
+    if(!p) p = state.products.find(x=>x.name.toLowerCase().includes(nameLower) || nameLower.includes(x.name.toLowerCase()));
+    if(p){
+      p.code = code;
+      if(priceRaw){
+        const price = parseFloat(priceRaw.replace(/\./g,'').replace(',','.'));
+        if(!isNaN(price)) p.price = price;
+      }
+      matched++;
+    } else {
+      notFound.push(name);
+    }
+  });
+  saveData();
+  closeOverlays();
+  render();
+  let msg = matched + ' produto(s) atualizados com código.';
+  if(notFound.length>0) msg += '\n\nNão encontrei (confira o nome):\n' + notFound.join('\n');
+  alert(msg);
+}
+
+function openBatchScan(){
+  batchQueue = state.products.filter(p=>!p.code);
+  batchIndex = 0;
+  if(batchQueue.length===0){ alert('Todos os produtos já têm código cadastrado! 🎉'); return; }
+  document.getElementById('overlayBatchScan').classList.add('show');
+  renderBatchScanStep();
+}
+function renderBatchScanStep(){
+  if(batchIndex >= batchQueue.length){
+    document.getElementById('batchScanProduct').textContent = '🎉 Concluído';
+    document.getElementById('batchScanProgress').textContent = 'Você cadastrou código pra todos os produtos dessa lista.';
+    stopScan('batchCamWrap');
+    return;
+  }
+  const p = batchQueue[batchIndex];
+  document.getElementById('batchScanProduct').textContent = p.name;
+  document.getElementById('batchScanProgress').textContent = `Produto ${batchIndex+1} de ${batchQueue.length}`;
+  startBarcodeScan({
+    wrapId:'batchCamWrap', videoId:'batchCamVideo', statusId:'batchCamStatus',
+    onResult:(code)=>{
+      p.code = code;
+      saveData();
+      batchIndex++;
+      setTimeout(renderBatchScanStep, 700);
+    }
+  });
+}
+function skipBatchScan(){
+  stopScan('batchCamWrap');
+  batchIndex++;
+  renderBatchScanStep();
+}
+function closeBatchScan(){
+  stopScan('batchCamWrap');
+  document.getElementById('overlayBatchScan').classList.remove('show');
+  render();
+}
+
 function openSearch(){
   document.getElementById('searchInput').value = '';
   document.getElementById('searchResults').innerHTML = '<div class="hint">Digite um nome ou código, ou escaneie um produto.</div>';
@@ -1522,6 +1736,12 @@ function openAdd(){
   document.getElementById('f_fav').checked = false;
   document.getElementById('overlayProduct').classList.add('show');
 }
+function openAddSwap(category){
+  openAdd();
+  document.getElementById('productModalTitle').textContent = 'Comprei outra marca';
+  document.getElementById('f_category').value = category;
+  setTimeout(()=> document.getElementById('f_name').focus(), 100);
+}
 function openEdit(id){
   const p = state.products.find(x=>x.id===id);
   if(!p) return;
@@ -1542,8 +1762,12 @@ function closeOverlays(){
   document.getElementById('overlaySettings').classList.remove('show');
   document.getElementById('overlayHistory').classList.remove('show');
   document.getElementById('overlaySearch').classList.remove('show');
+  document.getElementById('overlayBatchScan').classList.remove('show');
+  document.getElementById('overlayCodeUpdate').classList.remove('show');
+  document.getElementById('overlayCompare').classList.remove('show');
   stopScan('camWrap');
   stopScan('searchCamWrap');
+  stopScan('batchCamWrap');
 }
 
 function onCodeInput(){
@@ -2058,6 +2282,9 @@ function bindEvents(){
     onResult:(code)=>{ document.getElementById('searchInput').value = code; renderSearchResults(code); }
   });
   document.getElementById('searchCamStopBtn').onclick = ()=> stopScan('searchCamWrap');
+  document.getElementById('batchScanCloseBtn').onclick = closeBatchScan;
+  document.getElementById('batchScanStopBtn').onclick = closeBatchScan;
+  document.getElementById('batchScanSkipBtn').onclick = skipBatchScan;
   document.getElementById('overlaySearch').onclick = (e)=>{ if(e.target.id==='overlaySearch') closeOverlays(); };
   document.getElementById('doImportBtn').onclick = doImport;
   document.getElementById('notaFileBtn').onclick = ()=> document.getElementById('notaFileInput').click();
